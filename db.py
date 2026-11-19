@@ -1,9 +1,14 @@
+import json
 import os
+import secrets
 import sqlite3
+import time
 
-DATA = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
+ROOT = os.path.dirname(os.path.abspath(__file__))
+DATA = os.environ.get("DATA_DIR", os.path.join(ROOT, "data"))
 os.makedirs(DATA, exist_ok=True)
 DB_PATH = os.path.join(DATA, "votes.db")
+SEED_PATH = os.path.join(ROOT, "data", "seed.json")
 
 
 def conn():
@@ -12,12 +17,10 @@ def conn():
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA synchronous=NORMAL")
     con.execute("PRAGMA busy_timeout=15000")
-    con.execute("PRAGMA foreign_keys=ON")
     return con
 
 
 def now():
-    import time
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -35,13 +38,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS images(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             round_id INTEGER NOT NULL,
-            account_id TEXT NOT NULL,
             key TEXT NOT NULL UNIQUE,
-            kind TEXT NOT NULL,
-            width INTEGER NOT NULL DEFAULT 0,
-            height INTEGER NOT NULL DEFAULT 0,
-            bytes INTEGER NOT NULL DEFAULT 0,
-            sha256 TEXT NOT NULL DEFAULT '',
             title TEXT,
             created_at TEXT NOT NULL
         );
@@ -51,23 +48,9 @@ def init_db():
             round_id INTEGER NOT NULL,
             image_id INTEGER NOT NULL,
             voter TEXT NOT NULL,
+            voter_id TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
             UNIQUE(round_id, voter)
-        );
-
-        CREATE TABLE IF NOT EXISTS accounts(
-            key TEXT PRIMARY KEY,
-            name TEXT NOT NULL DEFAULT '',
-            active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS events(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            account_id TEXT NOT NULL,
-            kind TEXT NOT NULL,
-            detail TEXT NOT NULL,
-            t INTEGER NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS meta(
@@ -75,23 +58,41 @@ def init_db():
             v TEXT NOT NULL
         );
         """)
-        # voter_id cookie shard
-        cols = [r["name"] for r in con.execute("PRAGMA table_info(votes)").fetchall()]
-        if "voter_id" not in cols:
-            con.execute("ALTER TABLE votes ADD COLUMN voter_id TEXT DEFAULT ''")
         con.commit()
 
-    # seed a demo round if empty (admin page depends on a round existing to show upload)
-    with conn() as con:
-        n = con.execute("SELECT COUNT(*) c FROM rounds").fetchone()["c"]
-        if n == 0:
-            con.execute("INSERT INTO rounds(title,status,created_at) VALUES(?, 'open', ?)",
-                        ("第一轮 · 示例", now()))
-            con.commit()
+    seed_if_empty()
 
-    # force a checkpoint now so no WAL file is left behind at import time
     with conn() as con:
         con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        con.commit()
+
+
+def seed_if_empty():
+    """从仓库里的 data/seed.json 载入初始轮次和作品。
+
+    Vercel serverless 的文件系统是临时的，冷启动会重建 DB，所以这里每次
+    启动都要确保数据库里有这一轮的图片清单。
+    """
+    with conn() as con:
+        n = con.execute("SELECT COUNT(*) c FROM rounds").fetchone()["c"]
+        if n:
+            return
+        seed = {"title": "第一轮 · 示例", "images": []}
+        if os.path.isfile(SEED_PATH):
+            try:
+                with open(SEED_PATH, encoding="utf-8") as f:
+                    seed = json.load(f)
+            except Exception:
+                pass
+        cur = con.execute("INSERT INTO rounds(title,status,created_at) VALUES(?, 'open', ?)",
+                          (seed.get("title") or "第一轮 · 示例", now()))
+        rid = cur.lastrowid
+        for im in seed.get("images", []):
+            key = (im.get("key") or "").strip()
+            if not key:
+                continue
+            con.execute("INSERT OR IGNORE INTO images(round_id,key,title,created_at) VALUES(?,?,?,?)",
+                        (rid, key, im.get("title") or key, now()))
         con.commit()
 
 
@@ -108,7 +109,6 @@ def set_meta(k, v):
 
 
 def get_or_create_admin_key():
-    import secrets
     k = get_meta("admin_key")
     if not k:
         k = secrets.token_urlsafe(12)
