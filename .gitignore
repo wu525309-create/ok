@@ -1,0 +1,17 @@
+# 环境变量（含密钥）
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 本地数据库与上传的图片
+data/votes.db
+data/votes.db-wal
+data/votes.db-shm
+data/images/
+
+# macOS
+.DS_Store

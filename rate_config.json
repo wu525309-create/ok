@@ -1,0 +1,13 @@
+{
+  "upload": {
+    "recent": 18,
+    "byte_burst": 99614720,
+    "freeze": 5400
+  },
+  "vote": {
+    "window_sec": 60,
+    "max_per_window": 30
+  },
+  "max_items_per_round": 200,
+  "vote_key": ""
+}
