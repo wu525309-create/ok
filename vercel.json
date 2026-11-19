@@ -1,8 +1,14 @@
 {
   "builds": [
-    { "src": "app.py", "use": "@vercel/python" }
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python",
+      "config": {
+        "includeFiles": "app.py,db.py,storage.py,requirements.txt,static/**,data/seed.json"
+      }
+    }
   ],
   "routes": [
-    { "src": "/(.*)", "dest": "app.py" }
+    { "src": "/(.*)", "dest": "api/index.py" }
   ]
 }
