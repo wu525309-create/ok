@@ -5,7 +5,10 @@ import sqlite3
 import time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-DATA = os.environ.get("DATA_DIR", os.path.join(ROOT, "data"))
+# 数据库默认写到 /tmp：Vercel 上函数目录只读，/tmp 是唯一可写处；
+# 本地也是每次启动重建、由 data/seed.json 冷启动载入，行为一致。
+# 用 DATA_DIR 环境变量可覆盖（例如本地想持久化到 data/）。
+DATA = os.environ.get("DATA_DIR", "/tmp")
 os.makedirs(DATA, exist_ok=True)
 DB_PATH = os.path.join(DATA, "votes.db")
 SEED_PATH = os.path.join(ROOT, "data", "seed.json")
